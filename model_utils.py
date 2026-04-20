@@ -2,7 +2,7 @@ from transformers import pipeline
 
 # Lazy load model
 def get_generator():
-    return pipeline("text2text-generation", model="google/flan-t5-base")
+    return pipeline("text2text-generation", model="google/flan-t5-small")
 
 # 🔹 Better chunking (~1000 tokens ≈ ~700–800 words)
 def chunk_text(text, chunk_size=800):
