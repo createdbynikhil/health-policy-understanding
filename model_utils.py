@@ -1,14 +1,15 @@
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
+import re
 
-# 🔹 Load model (cached so it doesn't reload every time)
+# 🔹 Cache model (prevents reload every time)
 _generator = None
 
 def get_generator():
     global _generator
 
     if _generator is None:
-        model_name = "google/flan-t5-small"
+        model_name = "google/flan-t5-base"   # better than small
 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
@@ -24,7 +25,9 @@ def get_generator():
             with torch.no_grad():
                 outputs = model.generate(
                     **inputs,
-                    max_length=200
+                    max_length=300,
+                    temperature=0.3,
+                    do_sample=True
                 )
 
             return tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -34,61 +37,65 @@ def get_generator():
     return _generator
 
 
-# 🔹 Chunk long document
-def chunk_text(text, chunk_size=800):
+# 🔹 Clean noisy PDF text
+def clean_text(text):
+    import re
+
+    # remove repeated numbers
+    text = re.sub(r'(\b\d+\.\d+\b\s*){2,}', ' ', text)
+
+    # remove too many digits-only lines
+    text = re.sub(r'\b\d+\b', '', text)
+
+    # remove weird repetition
+    text = re.sub(r'(.)\1{3,}', r'\1', text)
+
+    # normalize spaces
+    text = re.sub(r'\s+', ' ', text)
+
+    return text
+
+
+# 🔹 Chunk long text
+def chunk_text(text, chunk_size=700):
     words = text.split()
     return [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
 
 
-# 🔹 Smart Summary
+# 🔹 Smart Structured Summary
 def generate_smart_summary(text):
     generator = get_generator()
+
+    text = clean_text(text)
     chunks = chunk_text(text)
 
     summaries = []
 
     for chunk in chunks:
-        prompt = f"""
-        Summarize this health policy document clearly.
+        prompt = prompt = f"""
+You are a professional insurance analyst.
 
-        Include:
-        - Key highlights
-        - Benefits
-        - Risks
-        - Policy duration
-        - Important conditions
+Analyze the document and provide a clean structured summary.
 
-        Text:
-        {chunk}
-        """
+Focus on:
+- Policy type
+- Coverage details
+- Benefits
+- Risks / exclusions
+- Policy duration
+- Important conditions
 
-        result = generator(prompt)
-        summaries.append(result)
+STRICT RULES:
+- Ignore numbering like 7.2, 8.1
+- Ignore repeated text
+- Do NOT copy raw text
+- Extract meaningful insights only
+- Write in clean bullet points
 
-    return " ".join(summaries)
-
-
-# 🔹 Intelligent Q&A
-def smart_answer(question, text):
-    generator = get_generator()
-    chunks = chunk_text(text)
-
-    answers = []
-
-    for chunk in chunks:
-        prompt = f"""
-        You are an intelligent health policy assistant.
-
-        Answer the question based on the document.
-        Even if exact words are missing, infer meaning.
-
-        Question: {question}
-
-        Document:
-        {chunk}
-        """
-
+Document:
+{chunk}
+"""
         result = generator(prompt)
         answers.append(result)
 
-    return " ".join(answers)
+    return "\n".join(answers)
