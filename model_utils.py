@@ -2,14 +2,14 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 import re
 
-# 🔹 Cache model (prevents reload every time)
+# 🔹 Cache model
 _generator = None
 
 def get_generator():
     global _generator
 
     if _generator is None:
-        model_name = "google/flan-t5-base"   # better than small
+        model_name = "google/flan-t5-base"
 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
@@ -37,32 +37,22 @@ def get_generator():
     return _generator
 
 
-# 🔹 Clean noisy PDF text
+# 🔹 Clean text
 def clean_text(text):
-    import re
-
-    # remove repeated numbers
     text = re.sub(r'(\b\d+\.\d+\b\s*){2,}', ' ', text)
-
-    # remove too many digits-only lines
     text = re.sub(r'\b\d+\b', '', text)
-
-    # remove weird repetition
     text = re.sub(r'(.)\1{3,}', r'\1', text)
-
-    # normalize spaces
     text = re.sub(r'\s+', ' ', text)
-
     return text
 
 
-# 🔹 Chunk long text
+# 🔹 Chunk text
 def chunk_text(text, chunk_size=700):
     words = text.split()
     return [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
 
 
-# 🔹 Smart Structured Summary
+# 🔹 Smart Summary
 def generate_smart_summary(text):
     generator = get_generator()
 
@@ -72,7 +62,7 @@ def generate_smart_summary(text):
     summaries = []
 
     for chunk in chunks:
-        prompt = prompt = f"""
+        prompt = f"""
 You are a professional insurance analyst.
 
 Analyze the document and provide a clean structured summary.
@@ -95,6 +85,38 @@ STRICT RULES:
 Document:
 {chunk}
 """
+
+        result = generator(prompt)
+        summaries.append(result)
+
+    return "\n\n".join(summaries)
+
+
+# 🔹 Smart Q&A (THIS WAS MISSING ❗)
+def smart_answer(question, text):
+    generator = get_generator()
+
+    text = clean_text(text)
+    chunks = chunk_text(text)
+
+    answers = []
+
+    for chunk in chunks:
+        prompt = f"""
+You are an expert health insurance advisor.
+
+Answer intelligently based on the document.
+
+IMPORTANT:
+- Even if the question is vague (like "risks", "cons", "benefits")
+- Infer meaning from the document
+
+Question: {question}
+
+Document:
+{chunk}
+"""
+
         result = generator(prompt)
         answers.append(result)
 
